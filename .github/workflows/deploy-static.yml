@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir -p build
           touch build/.nojekyll
-          cp -r src/* sample-data README.md artifact-manager.md build/
+          cp -r src/* sample-data README.md build/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -1,192 +1,270 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DuckDB WASM - Hypha Service</title>
-    
+
     <!-- Set base URL for GitHub Pages compatibility -->
     <script>
-        // Dynamically set base tag for GitHub Pages
-        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            const pathParts = window.location.pathname.split('/');
-            // Check if we're in a subdirectory (GitHub Pages)
-            if (pathParts.length > 2 && pathParts[1]) {
-                const base = document.createElement('base');
-                base.href = `/${pathParts[1]}/`;
-                document.head.appendChild(base);
-            }
+      // Dynamically set base tag for GitHub Pages
+      if (
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        const pathParts = window.location.pathname.split("/");
+        // Check if we're in a subdirectory (GitHub Pages)
+        if (pathParts.length > 2 && pathParts[1]) {
+          const base = document.createElement("base");
+          base.href = `/${pathParts[1]}/`;
+          document.head.appendChild(base);
         }
+      }
     </script>
-    
+
     <!-- Minimal styling only; no editor library needed -->
     <!-- Import map for DuckDB's apache-arrow dependency -->
     <script type="importmap">
-        {
-            "imports": {
-                "apache-arrow": "https://cdn.jsdelivr.net/npm/apache-arrow@14.0.2/+esm"
-            }
+      {
+        "imports": {
+          "apache-arrow": "https://cdn.jsdelivr.net/npm/apache-arrow@14.0.2/+esm"
         }
+      }
     </script>
-    
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        background: #2d2d30;
+        padding: 12px 20px;
+        border-bottom: 1px solid #3e3e42;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .header h1 {
+        font-size: 18px;
+        font-weight: 500;
+        color: #cccccc;
+      }
+
+      .header-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 12px;
+        background: #1e1e1e;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #6b7280;
+      }
+
+      .status-dot.ready {
+        background: #10b981;
+      }
+      .status-dot.busy {
+        background: #f59e0b;
+        animation: pulse 1.5s infinite;
+      }
+      .status-dot.error {
+        background: #ef4444;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
+        50% {
+          opacity: 0.5;
         }
-        
-        .header {
-            background: #2d2d30;
-            padding: 12px 20px;
-            border-bottom: 1px solid #3e3e42;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .header h1 {
-            font-size: 18px;
-            font-weight: 500;
-            color: #cccccc;
-        }
-        
-        .header-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        
-        .status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 12px;
-            background: #1e1e1e;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #6b7280;
-        }
-        
-        .status-dot.ready { background: #10b981; }
-        .status-dot.busy { background: #f59e0b; animation: pulse 1.5s infinite; }
-        .status-dot.error { background: #ef4444; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        button {
-            padding: 6px 16px;
-            background: #0e639c;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        
-        button:hover:not(:disabled) {
-            background: #1177bb;
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        button.secondary {
-            background: #3e3e42;
-        }
-        
-        button.secondary:hover:not(:disabled) {
-            background: #505053;
-        }
-        
-        button.danger {
-            background: #a1260d;
-        }
-        
-        button.danger:hover:not(:disabled) {
-            background: #c42e14;
-        }
-        
-        .main-container {
-            flex: 1;
-            display: flex;
-            overflow: hidden;
-        }
-        
-        .sidebar { width: 320px; border-right: 1px solid #3e3e42; display: flex; flex-direction: column; background: #1e1e1e; }
-        .panel { flex: 1; display: flex; flex-direction: column; }
-        .section-header { padding: 10px; background: #252526; border-bottom: 1px solid #3e3e42; font-size: 13px; color: #8b8b8b; }
-        .section-body { padding: 10px; overflow: auto; }
-        .artifact-item { padding: 8px; border-bottom: 1px solid #2a2a2e; cursor: pointer; }
-        .artifact-item:hover { background: #2a2a2e; }
-        .artifact-item.active { background: #0e639c; }
-        .query-input { width: 100%; height: 160px; background:#1e1e1e; color:#d4d4d4; border:1px solid #3e3e42; border-radius: 4px; padding: 8px; font-family: 'Monaco','Menlo','Consolas','Courier New',monospace; font-size: 13px; }
-        .table-container { overflow:auto; height: calc(100% - 40px); border: 1px solid #3e3e42; border-radius: 4px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #3e3e42; padding: 6px 8px; font-size: 12px; }
-        th { background: #252526; position: sticky; top: 0; }
+      }
+
+      button {
+        padding: 6px 16px;
+        background: #0e639c;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      button:hover:not(:disabled) {
+        background: #1177bb;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      button.secondary {
+        background: #3e3e42;
+      }
+
+      button.secondary:hover:not(:disabled) {
+        background: #505053;
+      }
+
+      button.danger {
+        background: #a1260d;
+      }
+
+      button.danger:hover:not(:disabled) {
+        background: #c42e14;
+      }
+
+      .main-container {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        width: 320px;
+        border-right: 1px solid #3e3e42;
+        display: flex;
+        flex-direction: column;
+        background: #1e1e1e;
+      }
+      .panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .section-header {
+        padding: 10px;
+        background: #252526;
+        border-bottom: 1px solid #3e3e42;
+        font-size: 13px;
+        color: #8b8b8b;
+      }
+      .section-body {
+        padding: 10px;
+        overflow: auto;
+      }
+      .artifact-item {
+        padding: 8px;
+        border-bottom: 1px solid #2a2a2e;
+        cursor: pointer;
+      }
+      .artifact-item:hover {
+        background: #2a2a2e;
+      }
+      .artifact-item.active {
+        background: #0e639c;
+      }
+      .query-input {
+        width: 100%;
+        height: 160px;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        border: 1px solid #3e3e42;
+        border-radius: 4px;
+        padding: 8px;
+        font-family: "Monaco", "Menlo", "Consolas", "Courier New", monospace;
+        font-size: 13px;
+      }
+      .table-container {
+        overflow: auto;
+        height: calc(100% - 40px);
+        border: 1px solid #3e3e42;
+        border-radius: 4px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #3e3e42;
+        padding: 6px 8px;
+        font-size: 12px;
+      }
+      th {
+        background: #252526;
+        position: sticky;
+        top: 0;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="header">
-        <h1>🦆 DuckDB WASM Service</h1>
-        <div class="header-controls">
-            <div class="status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Disconnected</span>
-            </div>
-            <button id="connectBtn" class="secondary">Connect to Hypha</button>
-            <button id="refreshArtifactsBtn" class="secondary" disabled>Refresh</button>
-            <button id="loadSampleBtn" class="secondary">Load Sample</button>
+      <h1>🦆 DuckDB WASM Service</h1>
+      <div class="header-controls">
+        <div class="status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Disconnected</span>
         </div>
+        <button id="connectBtn" class="secondary">Connect to Hypha</button>
+        <button id="refreshArtifactsBtn" class="secondary" disabled>
+          Refresh
+        </button>
+        <button id="loadSampleBtn" class="secondary">Load Sample</button>
+      </div>
     </div>
-    
+
     <div class="main-container">
-        <div class="sidebar">
-            <div class="section-header">Artifacts</div>
-            <div class="section-body" id="artifactList">
-                <div style="color:#8b8b8b">Connect to list artifacts…</div>
-            </div>
+      <div class="sidebar">
+        <div class="section-header">Artifacts</div>
+        <div class="section-body" id="artifactList">
+          <div style="color: #8b8b8b">Connect to list artifacts…</div>
         </div>
-        <div class="panel" style="flex:2">
-            <div class="section-header">SQL Query</div>
-            <div class="section-body">
-                <textarea id="sqlInput" class="query-input" placeholder="-- Write SQL here. The selected table is available as dataset.&#10;-- Example:&#10;SELECT * FROM dataset LIMIT 50;"></textarea>
-                <div style="margin-top:8px; display:flex; gap:8px;">
-                    <button id="runQueryBtn" disabled>Run</button>
-                    <button id="showSchemaBtn" class="secondary" disabled>Show Schema</button>
-                    <span id="tableHint" style="font-size:12px;color:#8b8b8b"></span>
-                </div>
-            </div>
-            <div class="section-header">Results / Preview</div>
-            <div class="section-body">
-                <div class="table-container" id="resultsContainer"></div>
-            </div>
+      </div>
+      <div class="panel" style="flex: 2">
+        <div class="section-header">SQL Query</div>
+        <div class="section-body">
+          <textarea
+            id="sqlInput"
+            class="query-input"
+            placeholder="-- Write SQL here. The selected table is available as dataset.&#10;-- Example:&#10;SELECT * FROM dataset LIMIT 50;"
+          ></textarea>
+          <div style="margin-top: 8px; display: flex; gap: 8px">
+            <button id="runQueryBtn" disabled>Run</button>
+            <button id="showSchemaBtn" class="secondary" disabled>
+              Show Schema
+            </button>
+            <span id="tableHint" style="font-size: 12px; color: #8b8b8b"></span>
+          </div>
         </div>
+        <div class="section-header">Results / Preview</div>
+        <div class="section-body">
+          <div class="table-container" id="resultsContainer"></div>
+        </div>
+      </div>
     </div>
-    
+
     <!-- Load the DuckDB + Hypha app -->
     <script type="module" src="./duckdb-wasm-service.js"></script>
-</body>
+  </body>
 </html>

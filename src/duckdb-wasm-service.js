@@ -8,6 +8,7 @@ let currentArtifact = null; // object with id, manifest
 let tableName = 'dataset';
 let statusDot = null;
 let statusText = null;
+let httpfsInitialized = false; // track httpfs extension
 
 function setStatus(kind, text) {
   if (!statusDot) {
@@ -184,6 +185,7 @@ async function loadDuckDB() {
     await duckdb.instantiate(bundle.mainModule, bundle.pthreadWorker);
     db = duckdb;
     conn = await db.connect();
+    await initHttpfsIfNeeded();
     setStatus('ready', 'DuckDB ready (worker)');
     return { db, conn };
   } catch (e) {
@@ -192,8 +194,20 @@ async function loadDuckDB() {
     await duckdb.instantiate(bundle.mainModule);
     db = duckdb;
     conn = await db.connect();
+    await initHttpfsIfNeeded();
     setStatus('ready', 'DuckDB ready (main thread)');
     return { db, conn };
+  }
+}
+
+async function initHttpfsIfNeeded() {
+  if (httpfsInitialized) return;
+  try {
+    await conn.query(`INSTALL httpfs;`);
+    await conn.query(`LOAD httpfs;`);
+    httpfsInitialized = true;
+  } catch (e) {
+    console.warn('httpfs extension not available or failed to load:', e.message);
   }
 }
 
@@ -211,24 +225,28 @@ async function loadArtifactIntoDuckDB(artifact) {
   // Try dataset.csv presence; otherwise try first csv file in manifest.files
   let csvPath = 'dataset.csv';
   try {
-    const csvText = await getArtifactFile(artifact.id, csvPath);
-    await registerCsvAsTable(csvText);
+    // Always lazy: create view over signed URL
+    const url = await getSignedArtifactUrl(artifact.id, csvPath);
+    await registerRemoteCsvAsTable(url);
   } catch (e) {
     // Try to detect first .csv
     const files = (artifact.manifest?.files || []).map(f => typeof f === 'string' ? f : f.path || f.name).filter(Boolean);
     const candidate = files.find(f => f.toLowerCase().endsWith('.csv'));
     if (!candidate) throw e;
-    const csvText = await getArtifactFile(artifact.id, candidate);
-    await registerCsvAsTable(csvText);
+    const url = await getSignedArtifactUrl(artifact.id, candidate);
+    await registerRemoteCsvAsTable(url);
   }
 }
 
-async function registerCsvAsTable(csvText) {
-  // Prefer DuckDB's virtual FS for robust loading in workers
-  const filePath = `/virtual/${tableName}.csv`;
-  await db.registerFileText(filePath, csvText);
+async function getSignedArtifactUrl(artifactId, path) {
+  const am = await getArtifactManager();
+  return await am.getFile({ artifact_id: artifactId, file_path: path, _rkwargs: true });
+}
+
+async function registerRemoteCsvAsTable(url) {
   await conn.query(`DROP TABLE IF EXISTS ${tableName};`);
-  await conn.query(`CREATE TABLE ${tableName} AS SELECT * FROM read_csv_auto('${filePath}', header=true);`);
+  // Create a view over remote CSV; PRAGMA attempts trigger streaming read
+  await conn.query(`CREATE VIEW ${tableName} AS SELECT * FROM read_csv_auto('${url}', HEADER=TRUE);`);
   await previewTable();
 }
 
@@ -387,7 +405,10 @@ function wireUi() {
       await loadDuckDB();
       const res = await fetch('./sample-data/dataset.csv');
       const csv = await res.text();
-      await registerCsvAsTable(csv);
+      // For local sample, create an in-memory object URL and still use lazy view semantics
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      await registerRemoteCsvAsTable(url);
       document.getElementById('runQueryBtn').disabled = false;
       document.getElementById('showSchemaBtn').disabled = false;
       document.getElementById('tableHint').textContent = 'Loaded local sample as dataset';

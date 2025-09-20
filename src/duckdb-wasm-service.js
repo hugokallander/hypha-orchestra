@@ -28,6 +28,7 @@ function getQueryParams() {
     collection: params.get("collection") || "biomni-dataset-collection",
     service_id: params.get("service_id") || "duckdb-wasm-worker",
     visibility: params.get("visibility") || "protected",
+    client_id: params.get("client_id") || null,
   };
 }
 
@@ -71,15 +72,24 @@ async function connectToHypha() {
   if (hyphaServer) return hyphaServer;
   setStatus("busy", "Connecting to Hypha…");
   await ensureHyphaClientLoaded();
-  const { server_url, workspace, token } = getQueryParams();
+  const { server_url, workspace, token, client_id } = getQueryParams();
 
   let tok = token || localStorage.getItem("token");
   if (!tok || isTokenExpired(tok)) {
-    tok = await window.hyphaWebsocketClient.login({
+    const loginOpts = {
       server_url,
       login_callback: (ctx) => window.open(ctx.login_url, "_blank"),
-    });
+    };
+    if (client_id) loginOpts.client_id = client_id;
+    tok = await window.hyphaWebsocketClient.login(loginOpts);
     localStorage.setItem("token", tok);
+  }
+
+  // If client_id not explicitly provided, try extract from token claim (if hypha includes client_id / aud / cid like fields)
+  let effectiveClientId = client_id;
+  if (!effectiveClientId) {
+    const payload = parseJWT(tok) || {};
+    effectiveClientId = payload.client_id || payload.cid || payload.aud || null;
   }
 
   hyphaServer = await window.hyphaWebsocketClient.connectToServer({
@@ -87,6 +97,7 @@ async function connectToHypha() {
     token: tok,
     workspace: workspace || undefined,
     method_timeout: 20000,
+    client_id: effectiveClientId || undefined,
   });
   setStatus("ready", `Connected: ${server_url}`);
   return hyphaServer;
@@ -124,7 +135,7 @@ function renderArtifacts(items) {
       '<div style="color:#8b8b8b">No artifacts found.</div>';
     return;
   }
-  items.forEach((it, idx) => {
+  items.forEach((it) => {
     const div = document.createElement("div");
     div.className =
       "artifact-item" +
@@ -184,7 +195,7 @@ async function loadDuckDB() {
       };
       bundle = await mod.selectBundle(MANUAL_BUNDLES);
     }
-  } catch (_) {
+  } catch {
     // ignore; will use CDN
   }
   if (!bundle) {
@@ -510,7 +521,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     // Register the service once connected, on best effort
     await registerService();
-  } catch (e) {
+  } catch {
     console.warn("Service registration deferred until login");
   }
 });

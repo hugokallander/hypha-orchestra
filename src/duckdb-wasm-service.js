@@ -389,6 +389,81 @@ async function service_query({ artifact, sql }) {
   return { columns, rows };
 }
 
+// --- Schema Definitions (Hypha JSON Schema style) ---
+const get_docs_schema = {
+  name: "get_docs",
+  description: "Get README.md (Markdown) content from the artifact if present.",
+  parameters: {
+    type: "object",
+    properties: {
+      artifact: {
+        type: "string",
+        description: "Artifact ID or manifest name (case-insensitive)."
+      }
+    },
+    required: ["artifact"],
+  },
+  returns: {
+    type: "string",
+    description: "Markdown content (empty string if not found)."
+  }
+};
+
+const get_schema_schema = {
+  name: "get_schema",
+  description: "Return DuckDB PRAGMA table_info() for the lazily streamed dataset.csv (or first CSV).",
+  parameters: {
+    type: "object",
+    properties: {
+      artifact: {
+        type: "string",
+        description: "Artifact ID or manifest name."
+      }
+    },
+    required: ["artifact"],
+  },
+  returns: {
+    type: "object",
+    description: "Schema info with columns (array of column names) and rows (array of objects).",
+    properties: {
+      columns: { type: "array", items: { type: "string" } },
+      rows: { type: "array", items: { type: "object" } }
+    }
+  }
+};
+
+const query_schema = {
+  name: "query",
+  description: "Run an arbitrary SQL statement against the lazily streamed dataset view.",
+  parameters: {
+    type: "object",
+    properties: {
+      artifact: {
+        type: "string",
+        description: "Artifact ID or manifest name whose dataset to query."
+      },
+      sql: {
+        type: "string",
+        description: "SQL statement to execute. Must be a single statement DuckDB can parse."
+      }
+    },
+    required: ["artifact", "sql"],
+  },
+  returns: {
+    type: "object",
+    description: "Query result containing columns array and rows array.",
+    properties: {
+      columns: { type: "array", items: { type: "string" } },
+      rows: { type: "array", items: { type: "object" } }
+    }
+  }
+};
+
+// Attach schemas to functions (similar to kernel service pattern)
+const get_docs_fn = Object.assign(service_get_docs, { __schema__: get_docs_schema });
+const get_schema_fn = Object.assign(service_get_schema, { __schema__: get_schema_schema });
+const query_fn = Object.assign(service_query, { __schema__: query_schema });
+
 async function resolveArtifact(artifactIdOrName) {
   if (!artifactIdOrName) throw new Error("artifact is required");
   // If exactly matches id, prefer it; else try by manifest.name
@@ -411,31 +486,12 @@ async function registerService() {
   const svc = await server.registerService({
     id: qp.service_id,
     name: "DuckDB WASM Worker",
-    description: "Run SQL with DuckDB WASM over Hypha artifacts",
+    description: "Run SQL with DuckDB WASM over Hypha artifacts (lazy httpfs CSV view).",
     config: { visibility: qp.visibility },
-    register_functions: {
-      get_docs: {
-        docs: "Get README.md content from artifact",
-        handler: service_get_docs,
-        params: [{ name: "artifact", type: "string" }],
-        returns: { type: "string" },
-      },
-      get_schema: {
-        docs: "Get schema of dataset.csv in artifact",
-        handler: service_get_schema,
-        params: [{ name: "artifact", type: "string" }],
-        returns: { type: "object" },
-      },
-      query: {
-        docs: "Run SQL against dataset.csv of artifact",
-        handler: service_query,
-        params: [
-          { name: "artifact", type: "string" },
-          { name: "sql", type: "string" },
-        ],
-        returns: { type: "object" },
-      },
-    },
+    // Exposed RPC methods with attached __schema__
+    get_docs: get_docs_fn,
+    get_schema: get_schema_fn,
+    query: query_fn,
   });
   console.log("Service registered", svc.id);
   serviceRegistered = true;
@@ -525,3 +581,25 @@ window.addEventListener("DOMContentLoaded", async () => {
     console.warn("Service registration deferred until login");
   }
 });
+
+// Test environment / Node export hook: expose functions & schemas when not in browser
+// This allows Jest or other runners to require the file and inspect handlers.
+(() => {
+  // Only run in CommonJS-like environments (Node tests)
+  const g = typeof globalThis !== 'undefined' ? globalThis : undefined;
+  if (!g) return;
+  const hasExports = typeof g.exports === 'object';
+  if (hasExports) {
+    g.exports._internal = {
+      service_get_docs,
+      service_get_schema,
+      service_query,
+      get_docs_schema,
+      get_schema_schema,
+      query_schema,
+      get_docs_fn,
+      get_schema_fn,
+      query_fn,
+    };
+  }
+})();

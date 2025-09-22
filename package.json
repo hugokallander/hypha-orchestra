@@ -1,0 +1,16 @@
+{
+  "name": "hypha-orchestra",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "29.7.0",
+    "whatwg-url": "14.0.0"
+  },
+  "dependencies": {
+    "axios": "1.6.8"
+  }
+}
